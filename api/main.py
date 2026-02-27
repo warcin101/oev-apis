@@ -1,10 +1,12 @@
 """
-Venus OEV Analytics API — FastAPI application.
+Venus OEV Analytics API — FastAPI application (multi-provider branch).
 
 Endpoints expose aggregated OEV liquidation statistics for Venus Protocol on BNB Smart Chain,
 computed from Dune Analytics queries 6702800 and 6715606.
 
-All responses are served from an in-memory cache that refreshes every 6 hours.
+Every endpoint returns a "providers" dict containing per-provider data for both
+"redstone" and "chainlink". All responses are served from an in-memory cache
+that refreshes every 6 hours.
 """
 
 from __future__ import annotations
@@ -22,9 +24,10 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Venus OEV Analytics API",
-    version="1.0.0",
+    version="2.0.0",
     description=(
         "Aggregated OEV liquidation statistics for Venus Protocol on BNB Smart Chain. "
+        "Returns per-provider data for RedStone and Chainlink. "
         "Data sourced from Dune Analytics (queries 6702800 and 6715606) and cached in memory, "
         "refreshed every 6 hours."
     ),
@@ -64,74 +67,81 @@ def health() -> JSONResponse:
     })
 
 
-@app.get("/metrics/summary", summary="Summary metrics")
+@app.get("/metrics/summary", summary="Summary metrics — all providers")
 def summary() -> JSONResponse:
     """
-    Dollar-weighted OEV/collateral ratio, recapture efficiency, and
-    aggregate liquidation statistics for RedStone on Venus Protocol.
+    Dollar-weighted OEV/collateral ratio, recapture efficiency, and aggregate
+    liquidation statistics, returned for each provider under a "providers" key.
 
-    Key fields:
+    Provider keys: "redstone", "chainlink".
+
+    Per-provider fields:
     - `oev_recapture_ratio_dollar_weighted_pct`: weighted average of OEV bid / collateral seized (%)
     - `oev_recapture_efficiency_pct`: share of the recapturable bonus bid back via OEV (%)
-    - `total_liquidation_count`: number of RedStone liquidations with collateral > $1
-    - `total_collateral_seized_usd`: total collateral seized across all RedStone liquidations
+    - `total_liquidation_count`: liquidation transactions with collateral > $1
+    - `total_collateral_seized_usd`: total collateral seized
     - `total_oev_recaptured_usd`: total OEV bids paid back to the protocol
+    - `simulated_gross_liquidation_bonus_usd`, `treasury_fee_usd`, `recapturable_bonus_usd`
+    - `realized_lb_pct_without_oev`, `realized_lb_pct_with_oev`
     """
     cache = _require_cache()
     return JSONResponse({
         "last_refreshed": cache["last_refreshed"],
-        "data": cache["summary"],
+        "providers": cache["summary"],
     })
 
 
-@app.get("/metrics/coverage", summary="OEV coverage metrics")
+@app.get("/metrics/coverage", summary="OEV coverage metrics — all providers")
 def coverage() -> JSONResponse:
     """
     Coverage rates measuring what share of eligible liquidation opportunities
-    were captured via the OEV channel.
+    were captured via the OEV channel, for each provider.
 
-    An eligible liquidation is one where the likely triggering asset is priced via a
-    RedStone OEV-enabled vToken and collateral seized exceeded $0.50.
+    An eligible liquidation is one where the likely triggering asset is priced via
+    an OEV-enabled vToken for that provider, and collateral seized exceeded $0.50.
 
-    Key fields:
+    Provider keys: "redstone", "chainlink".
+
+    Per-provider fields:
     - `coverage_by_count_pct`: % of eligible liquidations (by count) captured via OEV
     - `coverage_dollar_weighted_pct`: % of eligible collateral USD captured via OEV
-    - `eligible_count` / `eligible_usd`: total eligible liquidations and collateral
-    - `captured_count` / `captured_usd`: liquidations captured via OEV
-    - `missed_count` / `missed_usd`: eligible liquidations that bypassed OEV
+    - `eligible_count` / `eligible_usd`
+    - `captured_count` / `captured_usd`
+    - `missed_count` / `missed_usd`
     """
     cache = _require_cache()
     return JSONResponse({
         "last_refreshed": cache["last_refreshed"],
-        "data": cache["coverage"],
+        "providers": cache["coverage"],
     })
 
 
-@app.get("/metrics/daily", summary="Daily OEV fees time series")
+@app.get("/metrics/daily", summary="Daily OEV fees time series — all providers")
 def daily() -> JSONResponse:
     """
-    Total OEV bids paid by searchers per day — the portion of the liquidation bonus
-    returned to the protocol through the OEV auction.
+    Total OEV bids paid by searchers per day, for each provider.
 
-    Returns a list of `{date, oev_bid_usd}` objects sorted chronologically.
+    Provider keys: "redstone", "chainlink".
+    Each value is a list of `{date, oev_bid_usd}` objects sorted chronologically.
     """
     cache = _require_cache()
     return JSONResponse({
         "last_refreshed": cache["last_refreshed"],
-        "data": cache["daily"],
+        "providers": cache["daily"],
     })
 
 
-@app.get("/metrics/collateral-by-token", summary="Collateral seized by vToken")
+@app.get("/metrics/collateral-by-token", summary="Collateral seized by vToken — all providers")
 def collateral_by_token() -> JSONResponse:
     """
-    Total collateral seized broken down by vToken symbol, for all RedStone liquidations.
+    Total collateral seized broken down by vToken symbol, for each provider.
     Only tokens with total collateral seized >= $5 are included.
 
-    Returns a list of `{token, coll_seized_usd}` objects sorted by value descending.
+    Provider keys: "redstone", "chainlink".
+    Each value is a list of `{token, coll_seized_usd}` objects sorted by value descending.
     """
     cache = _require_cache()
     return JSONResponse({
         "last_refreshed": cache["last_refreshed"],
-        "data": cache["collateral_by_token"],
+        "providers": cache["collateral_by_token"],
     })

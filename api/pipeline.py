@@ -3,6 +3,9 @@ Data fetching and aggregation logic for the Venus OEV Analytics API.
 
 Mirrors the computations in venus/app.py without any Streamlit dependency.
 Variable names use the updated conventions: liqs / liqs_dedup (not legacy l_2023 / l_dedup).
+
+On the multi-provider branch every aggregation helper accepts a `provider` parameter
+so the same logic runs for both "RedStone" and "Chainlink".
 """
 
 from __future__ import annotations
@@ -14,6 +17,9 @@ from dune_client.client import DuneClient
 
 QUERY_LIQUIDATIONS = 6702800
 QUERY_COVERAGE = 6715606
+
+# Providers computed on this branch
+PROVIDERS = ["RedStone", "Chainlink"]
 
 
 # ---------------------------------------------------------------------------
@@ -43,38 +49,38 @@ def fetch_coverage_data(api_key: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Aggregation helpers
+# Per-provider aggregation helpers
 # ---------------------------------------------------------------------------
 
-def _compute_summary(liqs: pd.DataFrame) -> dict:
+def _compute_summary_for_provider(liqs: pd.DataFrame, provider: str) -> dict:
     """
     Dollar-weighted OEV/collateral ratio, recapture efficiency, and
-    total liquidation count / total collateral seized.
+    total liquidation count / total collateral seized for a single provider.
 
-    Mirrors app.py lines 66-82, 146-173, 202-216.
+    Mirrors app.py lines 66-82, 146-173, 202-216 (RedStone-specific logic
+    generalised to any provider via the `provider` parameter).
     """
-    # One row per tx
     liqs_dedup = liqs[liqs["is_primary_row"]].copy()
 
-    # df_filtered: RedStone only, with a valid ratio (used for dollar-weighted avg)
+    # df_filtered: provider only, with a valid ratio (used for dollar-weighted avg)
     df_filtered = liqs_dedup[
-        (liqs_dedup["oev_provider"] == "RedStone")
+        (liqs_dedup["oev_provider"] == provider)
         & (liqs_dedup["oev_to_collateral_ratio"].notna())
     ].copy()
 
     # Dollar-weighted average OEV/collateral ratio (as %)
     if df_filtered["total_coll_seized_usd"].sum() > 0:
-        rs_weighted_avg = (
+        weighted_avg = (
             (df_filtered["oev_to_collateral_ratio"] * df_filtered["total_coll_seized_usd"]).sum()
             / df_filtered["total_coll_seized_usd"].sum()
             * 100
         )
     else:
-        rs_weighted_avg = 0.0
+        weighted_avg = 0.0
 
-    # Recapture efficiency: uses liqs_dedup filtered to RedStone
+    # Recapture efficiency stats
     # Note: named-aggregation syntax only works after groupby; use direct series ops here.
-    df_oev = liqs_dedup[liqs_dedup["oev_provider"] == "RedStone"].copy()
+    df_oev = liqs_dedup[liqs_dedup["oev_provider"] == provider].copy()
     oev_liquidation_count = len(df_oev)
     total_collateral_liquidated_usd = float(df_oev["total_coll_seized_usd"].sum())
     total_debt_repaid_usd = float(df_oev["total_debt_repaid_usd"].sum())
@@ -99,24 +105,23 @@ def _compute_summary(liqs: pd.DataFrame) -> dict:
         else 0.0
     )
 
-    # Total RS collateral (same filter as df_filtered)
-    total_rs_coll = df_filtered["total_coll_seized_usd"].sum()
+    # Total collateral (same filter as df_filtered)
+    total_coll_seized = float(df_filtered["total_coll_seized_usd"].sum())
 
     # Total liquidation count: from liqs (all rows), grouped by tx_hash, coll > $1
-    rs_raw = liqs[liqs["oev_provider"] == "RedStone"]
-    redstone_liqs_count = (
-        rs_raw
+    raw = liqs[liqs["oev_provider"] == provider]
+    liq_count = len(
+        raw
         .groupby("tx_hash", sort=False)
         .agg(total_coll_seized_usd=("total_coll_seized_usd", "first"))
         .query("total_coll_seized_usd > 1")
     )
-    total_liq_count = len(redstone_liqs_count)
 
     return {
-        "oev_recapture_ratio_dollar_weighted_pct": round(rs_weighted_avg, 3),
+        "oev_recapture_ratio_dollar_weighted_pct": round(float(weighted_avg), 3),
         "oev_recapture_efficiency_pct": round(float(oev_recapture_pct), 2),
-        "total_liquidation_count": int(total_liq_count),
-        "total_collateral_seized_usd": round(float(total_rs_coll), 2),
+        "total_liquidation_count": int(liq_count),
+        "total_collateral_seized_usd": round(total_coll_seized, 2),
         "total_collateral_liquidated_usd": round(total_collateral_liquidated_usd, 2),
         "total_debt_repaid_usd": round(total_debt_repaid_usd, 2),
         "total_oev_recaptured_usd": round(total_oev_usd, 2),
@@ -128,55 +133,57 @@ def _compute_summary(liqs: pd.DataFrame) -> dict:
     }
 
 
-def _compute_coverage(oev_cov: pd.DataFrame) -> dict:
+def _compute_coverage_for_provider(oev_cov: pd.DataFrame, provider: str) -> dict:
     """
-    OEV coverage rates by count and dollar-weighted.
+    OEV coverage rates by count and dollar-weighted for a single provider.
 
     Mirrors app.py lines 297-363.
+    - captured: likely_cause_provider == provider AND oev_provider == provider
+    - missed:   likely_cause_provider == provider AND oev_provider == "none"
     """
     classified = oev_cov[
         (oev_cov["likely_cause_provider"].isin(["RedStone", "Chainlink"]))
         & (oev_cov["total_coll_seized_usd"] > 0.5)
     ].copy()
 
-    rs_captured = classified[
-        (classified["likely_cause_provider"] == "RedStone")
-        & (classified["oev_provider"] == "RedStone")
+    captured = classified[
+        (classified["likely_cause_provider"] == provider)
+        & (classified["oev_provider"] == provider)
     ]
-    rs_missed = classified[
-        (classified["likely_cause_provider"] == "RedStone")
+    missed = classified[
+        (classified["likely_cause_provider"] == provider)
         & (classified["oev_provider"] == "none")
     ]
 
-    rs_captured_usd = float(rs_captured["total_coll_seized_usd"].sum())
-    rs_missed_usd = float(rs_missed["total_coll_seized_usd"].sum())
-    rs_total_usd = rs_captured_usd + rs_missed_usd
-    rs_total = len(rs_captured) + len(rs_missed)
+    captured_usd = float(captured["total_coll_seized_usd"].sum())
+    missed_usd = float(missed["total_coll_seized_usd"].sum())
+    total_usd = captured_usd + missed_usd
+    total_count = len(captured) + len(missed)
 
-    coverage_by_count_pct = round(len(rs_captured) / rs_total * 100, 1) if rs_total > 0 else 0.0
-    coverage_dollar_weighted_pct = round(rs_captured_usd / rs_total_usd * 100, 1) if rs_total_usd > 0 else 0.0
+    coverage_by_count_pct = round(len(captured) / total_count * 100, 1) if total_count > 0 else 0.0
+    coverage_dollar_weighted_pct = round(captured_usd / total_usd * 100, 1) if total_usd > 0 else 0.0
 
     return {
         "coverage_by_count_pct": coverage_by_count_pct,
         "coverage_dollar_weighted_pct": coverage_dollar_weighted_pct,
-        "eligible_count": rs_total,
-        "eligible_usd": round(rs_total_usd, 2),
-        "captured_count": len(rs_captured),
-        "captured_usd": round(rs_captured_usd, 2),
-        "missed_count": len(rs_missed),
-        "missed_usd": round(rs_missed_usd, 2),
+        "eligible_count": total_count,
+        "eligible_usd": round(total_usd, 2),
+        "captured_count": len(captured),
+        "captured_usd": round(captured_usd, 2),
+        "missed_count": len(missed),
+        "missed_usd": round(missed_usd, 2),
     }
 
 
-def _compute_daily(liqs: pd.DataFrame) -> list[dict]:
+def _compute_daily_for_provider(liqs: pd.DataFrame, provider: str) -> list[dict]:
     """
-    Daily OEV fees recaptured time series.
+    Daily OEV fees recaptured time series for a single provider.
 
     Mirrors app.py lines 113-121.
-    Source: liqs_dedup filtered to RedStone, grouped by date.
+    Source: liqs_dedup filtered to provider, grouped by date.
     """
     liqs_dedup = liqs[liqs["is_primary_row"]].copy()
-    df_daily = liqs_dedup[liqs_dedup["oev_provider"] == "RedStone"].copy()
+    df_daily = liqs_dedup[liqs_dedup["oev_provider"] == provider].copy()
     df_daily["date"] = pd.to_datetime(df_daily["block_time"]).dt.date
 
     daily_oev = (
@@ -192,16 +199,16 @@ def _compute_daily(liqs: pd.DataFrame) -> list[dict]:
     ]
 
 
-def _compute_collateral_by_token(liqs: pd.DataFrame) -> list[dict]:
+def _compute_collateral_by_token_for_provider(liqs: pd.DataFrame, provider: str) -> list[dict]:
     """
-    Collateral seized grouped by vToken symbol.
+    Collateral seized grouped by vToken symbol for a single provider.
 
     Mirrors app.py lines 370-378.
     Source: liqs (all rows, NOT deduped) — multi-token txs have one row per
     collateral token, so summing coll_seized_usd across all rows gives correct totals.
     """
-    df_tokens = liqs[liqs["oev_provider"] == "RedStone"]
-    rs_by_coll = (
+    df_tokens = liqs[liqs["oev_provider"] == provider]
+    by_coll = (
         df_tokens
         .groupby("coll_token_symbol")["coll_seized_usd"]
         .sum()
@@ -211,7 +218,7 @@ def _compute_collateral_by_token(liqs: pd.DataFrame) -> list[dict]:
     )
     return [
         {"token": row["coll_token_symbol"], "coll_seized_usd": round(float(row["coll_seized_usd"]), 2)}
-        for _, row in rs_by_coll.iterrows()
+        for _, row in by_coll.iterrows()
     ]
 
 
@@ -221,7 +228,7 @@ def _compute_collateral_by_token(liqs: pd.DataFrame) -> list[dict]:
 
 def build_cache(api_key: str) -> dict:
     """
-    Fetch both Dune queries and compute all four aggregated payloads.
+    Fetch both Dune queries and compute all four aggregated payloads for each provider.
     Returns a dict ready to be stored as the in-memory cache.
     """
     liqs, fetch_time = fetch_liquidation_data(api_key)
@@ -230,8 +237,16 @@ def build_cache(api_key: str) -> dict:
     return {
         "last_refreshed": datetime.now(timezone.utc).isoformat(),
         "dune_execution_time": fetch_time.isoformat(),
-        "summary": _compute_summary(liqs),
-        "coverage": _compute_coverage(oev_cov),
-        "daily": _compute_daily(liqs),
-        "collateral_by_token": _compute_collateral_by_token(liqs),
+        "summary": {
+            p.lower(): _compute_summary_for_provider(liqs, p) for p in PROVIDERS
+        },
+        "coverage": {
+            p.lower(): _compute_coverage_for_provider(oev_cov, p) for p in PROVIDERS
+        },
+        "daily": {
+            p.lower(): _compute_daily_for_provider(liqs, p) for p in PROVIDERS
+        },
+        "collateral_by_token": {
+            p.lower(): _compute_collateral_by_token_for_provider(liqs, p) for p in PROVIDERS
+        },
     }
