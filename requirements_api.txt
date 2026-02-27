@@ -1,0 +1,6 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+dune-client==1.7.10
+pandas==2.3.3
+apscheduler==3.10.4
+python-dotenv==1.0.1
