@@ -104,10 +104,9 @@ def coverage() -> JSONResponse:
 
     Per-provider fields:
     - `coverage_by_count_pct`: % of eligible liquidations (by count) captured via OEV
-    - `coverage_dollar_weighted_pct`: % of eligible collateral USD captured via OEV
-    - `eligible_count` / `eligible_usd`
-    - `captured_count` / `captured_usd`
-    - `missed_count` / `missed_usd`
+    - `eligible_count`: total eligible liquidations
+    - `captured_count`: liquidations captured via OEV
+    - `missed_count`: eligible liquidations that bypassed OEV
     """
     cache = _require_cache()
     return JSONResponse({

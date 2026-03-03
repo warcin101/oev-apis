@@ -165,13 +165,13 @@ def _compute_coverage_for_provider(oev_cov: pd.DataFrame, provider: str) -> dict
 
     return {
         "coverage_by_count_pct": coverage_by_count_pct,
-        "coverage_dollar_weighted_pct": coverage_dollar_weighted_pct,
+        # "coverage_dollar_weighted_pct": coverage_dollar_weighted_pct,
         "eligible_count": total_count,
-        "eligible_usd": round(total_usd, 2),
+        # "eligible_usd": round(total_usd, 2),
         "captured_count": len(captured),
-        "captured_usd": round(captured_usd, 2),
+        # "captured_usd": round(captured_usd, 2),
         "missed_count": len(missed),
-        "missed_usd": round(missed_usd, 2),
+        # "missed_usd": round(missed_usd, 2),
     }
 
 
