@@ -122,7 +122,6 @@ def _compute_summary_for_provider(liqs: pd.DataFrame, provider: str) -> dict:
         "oev_recapture_efficiency_pct": round(float(oev_recapture_pct), 2),
         "total_liquidation_count": int(liq_count),
         "total_collateral_seized_usd": round(total_coll_seized, 2),
-        "total_collateral_liquidated_usd": round(total_collateral_liquidated_usd, 2),
         "total_debt_repaid_usd": round(total_debt_repaid_usd, 2),
         "total_oev_recaptured_usd": round(total_oev_usd, 2),
         "simulated_gross_liquidation_bonus_usd": round(float(total_actual_bonus_usd), 2),

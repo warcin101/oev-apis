@@ -37,7 +37,6 @@ Dollar-weighted OEV/collateral ratio, recapture efficiency, and aggregate liquid
       "oev_recapture_efficiency_pct": 73.42,
       "total_liquidation_count": 128,
       "total_collateral_seized_usd": 4820310.55,
-      "total_collateral_liquidated_usd": 4901250.00,
       "total_debt_repaid_usd": 4650000.00,
       "total_oev_recaptured_usd": 187430.20,
       "simulated_gross_liquidation_bonus_usd": 251250.00,
@@ -51,7 +50,6 @@ Dollar-weighted OEV/collateral ratio, recapture efficiency, and aggregate liquid
       "oev_recapture_efficiency_pct": 61.10,
       "total_liquidation_count": 54,
       "total_collateral_seized_usd": 1940200.00,
-      "total_collateral_liquidated_usd": 1980000.00,
       "total_debt_repaid_usd": 1850000.00,
       "total_oev_recaptured_usd": 58400.00,
       "simulated_gross_liquidation_bonus_usd": 130000.00,
@@ -71,8 +69,7 @@ Dollar-weighted OEV/collateral ratio, recapture efficiency, and aggregate liquid
 | `oev_recapture_ratio_dollar_weighted_pct` | Dollar-weighted average of OEV bid ÷ collateral seized (%) |
 | `oev_recapture_efficiency_pct` | Share of the recapturable bonus (gross bonus minus Venus 5% treasury take) bid back via OEV (%) |
 | `total_liquidation_count` | Liquidation transactions where collateral seized > $1 |
-| `total_collateral_seized_usd` | Sum of collateral seized for liquidations with a valid OEV ratio |
-| `total_collateral_liquidated_usd` | Sum of collateral seized across all provider liquidations |
+| `total_collateral_seized_usd` | Sum of collateral seized (USD) across all provider liquidations |
 | `total_debt_repaid_usd` | Sum of debt repaid by liquidators |
 | `total_oev_recaptured_usd` | Sum of OEV bids paid back to the protocol |
 | `simulated_gross_liquidation_bonus_usd` | Collateral seized − Debt repaid |
