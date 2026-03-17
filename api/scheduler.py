@@ -2,7 +2,7 @@
 In-memory cache and APScheduler background job for the Venus OEV Analytics API.
 
 The cache is a plain dict populated by pipeline.build_cache() on startup and
-refreshed every 6 hours.  All FastAPI route handlers read from get_cache().
+refreshed every 48 hours.  All FastAPI route handlers read from get_cache().
 """
 
 from __future__ import annotations
@@ -43,6 +43,6 @@ def start_scheduler(api_key: str) -> None:
     refresh()
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(refresh, trigger=IntervalTrigger(hours=6), id="cache_refresh")
+    scheduler.add_job(refresh, trigger=IntervalTrigger(hours=48), id="cache_refresh")
     scheduler.start()
-    logger.info("Scheduler started — cache will refresh every 6 hours")
+    logger.info("Scheduler started — cache will refresh every 48 hours")
