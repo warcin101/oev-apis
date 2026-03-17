@@ -43,6 +43,6 @@ def start_scheduler(api_key: str) -> None:
     refresh()
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(refresh, trigger=IntervalTrigger(hours=6), id="cache_refresh")
+    scheduler.add_job(refresh, trigger=IntervalTrigger(hours=48), id="cache_refresh")
     scheduler.start()
-    logger.info("Scheduler started — cache will refresh every 6 hours")
+    logger.info("Scheduler started — cache will refresh every 48 hours")
